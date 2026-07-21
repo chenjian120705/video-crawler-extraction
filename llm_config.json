@@ -1,0 +1,22 @@
+{
+  "active_provider": "local_vllm",
+  "providers": {
+    "deepseek": {
+      "display_name": "DeepSeek V4 Flash",
+      "model": "model",
+      "api_key": "api_key",
+      "api_url": "https://api.deepseek.com/v1/chat/completions",
+      "disable_thinking": true
+    },
+    "local_vllm": {
+      "display_name": "本地 模型",
+      "model": "model",
+      "api_key": "api_key",
+      "api_url": "http://ip:port/v1/chat/completions",
+      "strict_markdown_output": true,
+      "disable_thinking": true,
+      "connect_timeout": 20,
+      "read_timeout": 600
+    }
+  }
+}

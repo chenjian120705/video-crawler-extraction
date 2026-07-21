@@ -1,0 +1,32 @@
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+.DS_Store
+node_modules/
+dist/
+**/*.log
+
+tests/**/coverage/
+tests/e2e/reports
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+.cache
+
+models/

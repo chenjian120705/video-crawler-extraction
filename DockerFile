@@ -1,0 +1,78 @@
+# 基础镜像：纯净Ubuntu 22.04 LTS
+FROM 172.16.0.42:7005/image_center/ubuntu:22.04
+
+# 构建与运行环境变量
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+ENV PYTHONUNBUFFERED=1
+ENV VLLM_CACHE_DIR=/models
+ENV PIP_DEFAULT_TIMEOUT=100
+ENV PIP_RETRIES=10
+
+# CUDA版本（vLLM 0.7+官方推荐12.4，性能最优）
+ENV CUDA_VERSION=12.4.1
+ENV CUDA_HOME=/usr/local/cuda-12.4
+ENV PATH=$CUDA_HOME/bin:$PATH
+ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+# vLLM版本（固定稳定版，避免最新版的兼容性问题）
+ENV VLLM_VERSION=0.7.3
+
+# 1. 系统初始化与阿里云源配置
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 2. 安装基础系统依赖
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    wget curl git build-essential cmake ca-certificates gnupg2 lsb-release \
+    vim nano htop iputils-ping net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. 添加清华大学CUDA镜像源（国内最稳定）
+RUN curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/nvidia-cuda/ubuntu2204/x86_64/3bf863cc.pub | gpg --dearmor -o /usr/share/keyrings/nvidia-cuda-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/nvidia-cuda-keyring.gpg] https://mirrors.tuna.tsinghua.edu.cn/nvidia-cuda/ubuntu2204/x86_64/ /" | tee /etc/apt/sources.list.d/cuda.list
+
+# 4. 安装CUDA Toolkit（仅安装运行时必要组件，不包含驱动）
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends cuda-toolkit-12-4 && \
+    rm -rf /var/lib/apt/lists/* && \
+    # 清理CUDA安装缓存，减小镜像体积
+    rm -rf $CUDA_HOME/doc $CUDA_HOME/man $CUDA_HOME/samples $CUDA_HOME/libnvvp
+
+# 5. 安装Python 3.11（使用清华源的deadsnakes PPA）
+RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy main universe" > /etc/apt/sources.list.d/deadsnakes.list && \
+    curl -fsSL https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776 | gpg --dearmor -o /usr/share/keyrings/deadsnakes-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/deadsnakes-archive-keyring.gpg] https://mirrors.tuna.tsinghua.edu.cn/deadsnakes/ jammy main" >> /etc/apt/sources.list.d/deadsnakes.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    python3.11 python3.11-dev python3-pip python3.11-venv \
+    && rm -rf /var/lib/apt/lists/* && \
+    # 设置Python 3.11为默认版本
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --set python3 /usr/bin/python3.11 && \
+    # 升级pip到最新版
+    python3 -m pip install --upgrade pip setuptools wheel
+
+# 6. 配置pip国内源（阿里云+清华PyTorch镜像）
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.extra-index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch/whl/cu124 && \
+    pip config set global.trusted-host mirrors.aliyun.com mirrors.tuna.tsinghua.edu.cn
+
+# 7. 预安装PyTorch（使用清华镜像，避免vLLM安装时重新下载）
+RUN pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+
+# 8. 安装vLLM（使用官方预编译wheel包，速度最快）
+RUN pip install https://mirrors.tuna.tsinghua.edu.cn/github-release/vllm-project/vllm/v${VLLM_VERSION}/vllm-${VLLM_VERSION}-cp311-cp311-manylinux1_x86_64.whl[openai]
+
+# 设置工作目录
+WORKDIR /home
+
+# 暴露vLLM OpenAI API默认端口
+EXPOSE 8000
+
+# 默认启动命令（可通过docker run命令覆盖）
+CMD ["bash"]

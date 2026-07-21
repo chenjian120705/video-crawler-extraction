@@ -1,0 +1,89 @@
+import torch
+from torch.nn.utils.rnn import pad_sequence
+
+
+def slice_padding_fbank(speech, speech_lengths, vad_segments):
+    """Slice padding fbank.
+    
+        Args:
+            speech: Speech audio tensor, shape (batch, time).
+            speech_lengths: Length of each speech sample.
+            vad_segments: TODO.
+        """
+    speech_list = []
+    speech_lengths_list = []
+    for i, segment in enumerate(vad_segments):
+
+        bed_idx = int(segment[0][0] * 16)
+        end_idx = min(int(segment[0][1] * 16), speech_lengths[0])
+        speech_i = speech[0, bed_idx:end_idx]
+        speech_lengths_i = end_idx - bed_idx
+        speech_list.append(speech_i)
+        speech_lengths_list.append(speech_lengths_i)
+    feats_pad = pad_sequence(speech_list, batch_first=True, padding_value=0.0)
+    speech_lengths_pad = torch.Tensor(speech_lengths_list).int()
+    return feats_pad, speech_lengths_pad
+
+
+def slice_padding_audio_samples(speech, speech_lengths, vad_segments):
+
+    """Slice audio into VAD segments with proper padding.
+
+    Args:
+        speech (Tensor): Full audio tensor.
+        speech_lengths (int): Total audio length.
+        vad_segments (list): List of (segment_info, original_index) tuples,
+            where segment_info is [start_ms, end_ms].
+
+    Returns:
+        tuple: (speech_list, speech_lengths_list) - lists of numpy arrays and their lengths.
+    """
+    speech_list = []
+    speech_lengths_list = []
+    for i, segment in enumerate(vad_segments):
+        bed_idx = int(segment[0][0] * 16)
+        end_idx = min(int(segment[0][1] * 16), speech_lengths)
+        speech_i = speech[bed_idx:end_idx]
+        speech_lengths_i = end_idx - bed_idx
+        speech_list.append(speech_i)
+        speech_lengths_list.append(speech_lengths_i)
+
+    return speech_list, speech_lengths_list
+
+
+def merge_vad(vad_result, max_length=15000, min_length=0):
+
+    """Merge short VAD segments to reduce fragmentation.
+
+    Args:
+        vad_result (list): VAD segments [[start_ms, end_ms], ...].
+        max_length (int): Maximum merged segment length in ms (default 15000).
+        min_length (int): Minimum segment length; shorter ones get merged (default 0).
+
+    Returns:
+        list: Merged VAD segments [[start_ms, end_ms], ...].
+    """
+    new_result = []
+    if len(vad_result) <= 1:
+        return vad_result
+    time_step = [t[0] for t in vad_result] + [t[1] for t in vad_result]
+    time_step = sorted(list(set(time_step)))
+    if len(time_step) == 0:
+        return []
+    bg = 0
+    for i in range(len(time_step) - 1):
+        time = time_step[i]
+        if time_step[i + 1] - bg < max_length:
+            continue
+        if time - bg > min_length:
+            new_result.append([bg, time])
+        # if time - bg < max_length * 1.5:
+        #     new_result.append([bg, time])
+        # else:
+        #     split_num = int(time - bg) // max_length + 1
+        #     spl_l = int(time - bg) // split_num
+        #     for j in range(split_num):
+        #         new_result.append([bg + j * spl_l, bg + (j + 1) * spl_l])
+        bg = time
+    new_result.append([bg, time_step[-1]])
+    return new_result
